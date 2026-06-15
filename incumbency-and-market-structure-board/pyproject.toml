@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "incumbency"
+version = "0.1.0"
+description = "Incumbency & Market-Structure Board — federal commodity market-entry intelligence"
+requires-python = ">=3.9"
+dependencies = [
+    "pandas>=2.0",
+    "duckdb>=1.0",
+    "rapidfuzz>=3.0",
+    "requests>=2.28",
+    "streamlit>=1.30",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
