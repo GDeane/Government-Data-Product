@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+data/raw/*
+data/interim/*
+*.duckdb
+*.duckdb.wal
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+.idea/
+.venv/
+venv/
