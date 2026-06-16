@@ -52,6 +52,7 @@ def build_canonical_awards(
         amendment_number = r.get("amendmentNumber", "000")
         amendment_type = r.get("amendmentType", "")
 
+        commodity, commodity_type = normalize.commodity_key(r.get("unspsc"), r.get("gsin"))
         award_value = clean.parse_value(r.get("contractValue"))
         amend_delta = clean.parse_value(r.get("amendmentValue"))
         pd_value = clean.parse_value(r.get("pdValue"))
@@ -80,7 +81,9 @@ def build_canonical_awards(
             "buyer_canonical": buyer_res.canonical_of.get(
                 (buyer_raw or "").strip(), buyer_raw),
             "gsin": normalize.normalize_gsin(r.get("gsin")),
-            "unspsc": (str(r.get("unspsc")).strip() if r.get("unspsc") else ""),
+            "unspsc": normalize.normalize_unspsc(r.get("unspsc")),
+            "commodity": commodity,
+            "commodity_type": commodity_type,
             "procedure_class": normalize.classify_procedure(r.get("solicitationProcedure")),
             "instrument_class": normalize.classify_instrument(r.get("instrumentType")),
             "award_value_cad": award_value,
@@ -107,3 +110,32 @@ def run_pipeline(raw: pd.DataFrame, today: Optional[date] = None,
     awards, vendor_res, buyer_res = build_canonical_awards(raw, adjudicator=adjudicator)
     markets = signals.compute_markets(awards, resolution=vendor_res, today=today)
     return PipelineResult(awards, markets, vendor_res, buyer_res)
+
+
+def build_rfps(raw_rfps: pd.DataFrame, dept_crosswalk: Optional[dict] = None) -> pd.DataFrame:
+    """Map raw open-tender-notice rows to the canonical RFP table used by the 'who's my
+    competition' link. Buyer names are canonicalized with the same department crosswalk used
+    for awards, so a posted RFP's buyer matches the historical market's `buyer_canonical`."""
+    dept_crosswalk = dept_crosswalk if dept_crosswalk is not None else DEPARTMENT_CROSSWALK
+    if raw_rfps is None or raw_rfps.empty:
+        return pd.DataFrame()
+    out = pd.DataFrame()
+    out["solicitation_number"] = raw_rfps.get("solicitationNumber")
+    out["title"] = raw_rfps.get("title")
+    out["gsin"] = raw_rfps.get("gsin").map(normalize.normalize_gsin)
+    unspsc_col = (raw_rfps.get("unspsc") if "unspsc" in raw_rfps.columns
+                  else pd.Series([None] * len(raw_rfps)))
+    out["unspsc"] = unspsc_col.map(normalize.normalize_unspsc)
+    commodity = [normalize.commodity_key(u, g)
+                 for u, g in zip(unspsc_col, raw_rfps.get("gsin"))]
+    out["commodity"] = [c for c, _ in commodity]
+    out["commodity_type"] = [t for _, t in commodity]
+    buyer_raw = raw_rfps.get("buyerName").fillna("")
+    out["buyer_raw"] = buyer_raw
+    out["buyer_canonical"] = buyer_raw.map(lambda b: dept_crosswalk.get(str(b).strip(),
+                                                                        str(b).strip()))
+    out["closing_date"] = raw_rfps.get("tenderClosingDate").map(clean.parse_date)
+    out["category"] = raw_rfps.get("procurementCategory")
+    out["procurement_method"] = raw_rfps.get("procurementMethod")
+    out["source"] = "open_tenders"
+    return out

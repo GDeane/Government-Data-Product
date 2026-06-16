@@ -46,6 +46,42 @@ def top1_vendor(vbv: dict) -> Optional[str]:
     return max(vbv, key=vbv.get) if vbv else None
 
 
+def count_by_vendor(df: pd.DataFrame) -> dict:
+    """Number of *award events* (base awards, excluding amendments/admin) won per canonical
+    vendor — i.e. how many contracts each competitor has won in this market."""
+    events = df[~df["is_amendment"].fillna(False) & ~df["is_admin_amendment"].fillna(False)]
+    return events.groupby("vendor_canonical").size().to_dict()
+
+
+def topk_shares(vbv: dict, k: int = 3) -> list:
+    """Top-k vendors by award-value share, as [(vendor, share), ...] (D4.1 → competition)."""
+    total = sum(vbv.values())
+    if total <= 0:
+        return []
+    ranked = sorted(vbv.items(), key=lambda kv: kv[1], reverse=True)
+    return [(v, val / total) for v, val in ranked[:k]]
+
+
+def vendor_share_table(df: pd.DataFrame) -> list:
+    """Per-vendor market-share rows for the 'who's my competition' pie, sorted by value
+    share descending. Each row carries BOTH bases: dollar share and award-count share."""
+    vbv = value_by_vendor(df)
+    cbv = count_by_vendor(df)
+    total_v = sum(vbv.values())
+    total_c = sum(cbv.values()) or 0
+    rows = []
+    for vendor, value in sorted(vbv.items(), key=lambda kv: kv[1], reverse=True):
+        awards = int(cbv.get(vendor, 0))
+        rows.append({
+            "vendor": vendor,
+            "value": round(float(value), 2),
+            "value_share": round(value / total_v, 4) if total_v else 0.0,
+            "awards": awards,
+            "count_share": round(awards / total_c, 4) if total_c else 0.0,
+        })
+    return rows
+
+
 # --- Turnover / dynamism (D4.2) -------------------------------------------------------
 @dataclass
 class TurnoverMetrics:
@@ -351,17 +387,24 @@ def compute_markets(awards: pd.DataFrame, resolution=None,
     set (D3.3)."""
     today = today or date.today()
     rows = []
-    for (gsin, buyer), df in awards.groupby(["gsin", "buyer_canonical"], dropna=False):
-        # A market needs a real commodity code and buyer; rows with a blank GSIN are not a
-        # commodity market (they would otherwise lump into one giant pseudo-market on live
-        # data where GSIN coding is missing).
-        if not str(gsin).strip() or not str(buyer).strip() or str(buyer).strip().lower() == "nan":
+    for (commodity, buyer), df in awards.groupby(["commodity", "buyer_canonical"],
+                                                 dropna=False):
+        # A market needs a real commodity code and buyer; rows with a blank/null commodity
+        # are not a commodity market (they would otherwise lump into one giant pseudo-market
+        # on live data where commodity coding is missing).
+        if (str(commodity).strip().lower() in ("", "nan", "none", "null")
+                or str(buyer).strip().lower() in ("", "nan", "none", "null")):
             continue
+        commodity_type = next((t for t in df["commodity_type"] if t), "")
+        gsin_rep = next((g for g in df["gsin"] if str(g).strip()), "")
+        unspsc_rep = next((u for u in df["unspsc"] if str(u).strip()), "")
         non_admin = df[~df["is_admin_amendment"].fillna(False)]
         n_awards = int(non_admin[~non_admin["is_amendment"].fillna(False)].shape[0])
 
         vbv = value_by_vendor(df)
         t1 = top1_share(vbv)
+        topk = topk_shares(vbv, k=3)
+        shares = vendor_share_table(df)
         pmix = procedure_mix(df)
         imix = instrument_mix(df)
         tm = turnover_metrics(df, today=today)
@@ -377,11 +420,20 @@ def compute_markets(awards: pd.DataFrame, resolution=None,
             psv = resolution.possible_same_vendor_for(raw_in_market)
 
         rows.append({
-            "gsin": gsin,
+            "commodity": commodity,
+            "commodity_type": commodity_type,
+            "gsin": gsin_rep,
+            "unspsc": unspsc_rep,
             "buyer_canonical": buyer,
             "n_awards": n_awards,
             "top1_vendor": top1_vendor(vbv),
             "top1_share": round(t1, 4),
+            "top2_vendor": topk[1][0] if len(topk) > 1 else None,
+            "top2_share": round(topk[1][1], 4) if len(topk) > 1 else None,
+            "top3_vendor": topk[2][0] if len(topk) > 2 else None,
+            "top3_share": round(topk[2][1], 4) if len(topk) > 2 else None,
+            "total_value_cad": round(sum(vbv.values()), 2),
+            "vendor_shares": shares,
             "hhi": round(hhi(vbv), 4),
             "distinct_winners": tm.distinct_winners,
             "lead_changes": tm.lead_changes,

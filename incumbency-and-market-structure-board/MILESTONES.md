@@ -237,3 +237,92 @@ joined onto the amendment-aware spine with published fields. We do not fabricate
 **Result:** contract-history build runs end-to-end on real FY data (6,320 rows → 99 markets,
 amendment-correct). Full suite **42 tests pass** (3 network-gated). Wiring the bid signal onto this
 spine would require a probabilistic vendor+buyer+date+amount match — explicitly out of scope.
+
+---
+
+## Milestone 9 — Rescope to "Who's My Competition?" (top-k + market share)
+
+**Why.** The verdict/score/turnover/bid model carried more values and correlations than could be
+explained in the available time. Per the product owner, the deliverable is rescoped to a focused
+**"who's my competition"** page: for a selected market, the previous winners' **market share as a
+pie chart** with the **top-1/2/3** competitors called out.
+
+**Decisions**
+
+- **D9.1 — UI is competition-only; structural backend retained, hidden.** The verdict / turnover /
+  contestability / bid logic stays in `signals.py` and its tests (kept green), but is no longer
+  surfaced — it sits behind a single collapsed "experimental" expander. Nothing was deleted, so
+  the broader read is one edit away if wanted.
+- **D9.2 — Top-k + full share table.** `compute_markets` now also emits `top2/top3_vendor` +
+  shares, `total_value_cad`, and `vendor_shares` — a per-vendor table carrying **both** bases:
+  dollar share and award-count share. The pie shows whichever the user picks (the share basis was
+  a product-owner choice: *show both*).
+- **D9.3 — Share is entity-resolved.** Shares are computed after vendor entity resolution, so a
+  firm's name variants count as one competitor — the load-bearing correctness property for a
+  "market share" claim.
+- **D9.4 — Open-RFP → history link (best-effort).** A new `rfps` table (CanadaBuys "Open tender
+  notices", or synthetic offline) links a posted RFP to historical competition by GSIN × buyer
+  (`linkage.match_rfp_to_markets`, precision `exact` / `gsin` / `none`). **Honest coverage limit:**
+  only ~5% of open notices carry a GSIN, so most can't be linked precisely; we report `none`
+  rather than fall back to a misleadingly coarse buyer-or-category match.
+- **D9.5 — Bug fixed while wiring live RFPs: the `"NAN"` GSIN.** `normalize_gsin` turned an empty
+  CSV cell (pandas `NaN`) into the string `"NAN"`, which faked a real code — making open-tender
+  GSIN coverage look like 100% and creating a phantom `NAN` market. Now all null-ish values
+  (`None`, `NaN`, `NULL`, `N/A`, blank) collapse to `""`; the empty-GSIN market guard and the RFP
+  linker were hardened to match. Regression-tested.
+
+**Result:** Streamlit "Who's My Competition?" page with value/award-count pie + top-k + open-RFP
+link; three DuckDB tables (`awards`, `markets`, `rfps`). Full suite **49 tests pass**. Live
+contract-history build → 99 markets; real open tenders → 3 exact + 9 GSIN-level RFP matches (rest
+honestly unlinkable).
+
+---
+
+## Milestone 10 — Re-key markets on UNSPSC (coverage fix)
+
+**The finding.** GSIN — the commodity key inherited from the spec — is barely populated:
+measured on live data, **~5% of open tenders and ~6% of contract-history rows carry a GSIN**, vs
+**~84% / ~95% for UNSPSC**. Because the empty-commodity guard (D8.5) correctly drops blank-code
+rows, the GSIN-keyed contract-history board was being built from only ~6% of the data.
+
+**Decisions**
+
+- **D10.1 — Commodity key = full 8-digit UNSPSC, GSIN fallback.** `normalize.commodity_key`
+  returns UNSPSC where present, else GSIN, else '' (so the Proactive-Disclosure spine, which has
+  no UNSPSC, still forms markets from its commodity code). Per product-owner choice: full 8-digit
+  (precise *and* ~95% filled), not the coarser 4-digit family. Markets group by
+  `commodity × buyer`; the RFP link matches on the same key.
+- **D10.2 — Representative codes retained.** Each market still carries a representative `gsin` and
+  `unspsc` for display/reference, and `commodity` / `commodity_type` for the key. (Synthetic GSIN
+  and UNSPSC are 1:1, so existing golden tests that filter by representative GSIN still hold.)
+- **D10.3 — Amendment rows must carry the commodity.** Fixture amendment rows were given the same
+  UNSPSC as their base award so they group into the same market (else the GSIN fallback would
+  split them off). On live contract history UNSPSC is ~95% uniform across a contract's rows; the
+  rare split is an accepted minor edge.
+
+**Result (live FY2024-25 contract history):** markets **99 → 1,275** (13×, now using nearly all
+the data: 1,184 UNSPSC-keyed + 91 GSIN-fallback); open-RFP links **12 → 331** (193 exact + 138
+commodity-level, of 916 RFPs). Full suite **52 tests pass**. Caveat unchanged from the spec:
+8-digit UNSPSC is precise but a few near-identical codes can split one logical market — surfaced
+via sample size, not hidden.
+
+---
+
+## Milestone 11 — RFP-first UI; join on UNSPSC *or* GSIN
+
+**Goal.** Per the product owner, the **"Open RFPs → competition"** view is now the default
+landing tab, and clicking an RFP shows the historical competition (pie + top-k) joined by
+UNSPSC **or** GSIN.
+
+**Decisions**
+
+- **D11.1 — RFP tab is the default.** Tabs reordered so "Open RFPs → competition" renders first
+  ("Browse historical markets" is second). Added title/buyer filters and an "Only linkable"
+  toggle since live data has ~900 open notices.
+- **D11.2 — Join on UNSPSC or GSIN (UNSPSC preferred).** `linkage.match_rfp_to_markets(unspsc,
+  gsin, buyer, markets)` now unions matches on the market's representative UNSPSC and GSIN, so a
+  notice carrying only one of the two codes still links. It reports `matched_on`
+  ('unspsc' / 'gsin' / 'unspsc+gsin') and the precision (`exact` if buyer also matches). The
+  drill-down renders the matched market(s) with the same pie + top-k as the markets tab.
+
+**Result:** RFP-first page; full suite **53 tests pass** (added a GSIN-fallback-join test).

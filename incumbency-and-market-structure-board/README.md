@@ -1,21 +1,32 @@
-# Incumbency & Market-Structure Board
+# Who's My Competition? (Incumbency & Market-Structure Board)
 
-A vendor-side, market-entry intelligence tool for firms that sell to the Government of Canada.
-It turns federal procurement disclosure into **a ranked map of commodity markets by how
-entrenched the sitting incumbent is and how enterable the market looks** — so a
-business-development / capture lead can tell **a beatable incumbent from a walled one** before
-spending scarce proposal budget.
+A vendor-side tool for firms that sell to the Government of Canada. For any federal commodity
+market — one commodity (**UNSPSC** code, or GSIN where UNSPSC is absent) bought by one
+department — it shows **who has won historically and their market share**, so a
+business-development / capture lead can see their likely competition before bidding.
 
-> **The one question it answers:** *"Which commodity (GSIN) × buyer markets are worth pursuing,
-> because the incumbent's position looks structurally enterable — and which are locked, or held
-> by a genuinely strong incumbent rather than merely unchallenged?"*
+> **The one question the UI answers:** *"For this commodity × buyer, who are the incumbents,
+> and how much of the market does each hold?"* — presented as a pie chart with the **top-1/2/3
+> competitors** called out, by award value **or** by number of awards.
 
-It deliberately answers a **market-entry** question (*"is the incumbent beatable?"*), not an
-**oversight** question (*"was this specific contract improperly directed?"*).
+**The default view is "Open RFPs → competition":** pick a currently-posted RFP and the page
+shows who has historically won the same commodity at the same buyer — your likely competition,
+as pie charts. The RFP→history join is on **UNSPSC or GSIN** (UNSPSC preferred — ~84% of open
+notices carry it vs ~5% for GSIN), so it fires for most notices; those with no commodity code
+are reported as unlinkable. A second tab lets you browse the historical markets directly.
+
+Every vendor identity is **entity-resolved**, so a firm's variants (Inc./Ltd., regional
+offices, M&A) count as one competitor rather than several — which is what makes the shares
+correct.
+
+> **Earlier, broader version.** This started as a market-*structure* tool that also assigned an
+> enterable / walled / ambiguous **verdict** from turnover, procedure, instrument, and the
+> disclosed single-bid rate. That logic is still in the backend (and tested) but is no longer
+> the focus of the UI — see "Retained backend" below and `MILESTONES.md` §9.
 
 ---
 
-## What's signal here
+## What's signal here (retained backend, not the UI focus)
 
 Each `(commodity × buyer)` market gets a transparent **verdict**:
 
@@ -73,16 +84,17 @@ python scripts/build.py
 python scripts/build.py --source live --limit 8000             # PD spine — has bid counts
 python scripts/build.py --source contract_history --years 2024-2025  # amendment-aware spine
 
-# 3) Explore the ranked board
+# 3) Explore the "Who's My Competition?" board (pie charts + top-k + open-RFP link)
 streamlit run app/board.py
 
 # 4) Run the tests
 python -m pytest -q
 ```
 
-`scripts/build.py` writes `data/market_board.duckdb` with two tables — `awards` (canonical
-per-award, the source of truth) and `markets` (aggregated metrics + verdict). The Streamlit app
-reads that file.
+`scripts/build.py` writes `data/market_board.duckdb` with three tables — `awards` (canonical
+per-award, the source of truth), `markets` (per GSIN × buyer: top-k competitors, the full
+vendor share table, plus the retained structural metrics), and `rfps` (currently-posted open
+tenders, for the competition link). The Streamlit app reads that file.
 
 ---
 

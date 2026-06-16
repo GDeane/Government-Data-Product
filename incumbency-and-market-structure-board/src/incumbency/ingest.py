@@ -220,6 +220,33 @@ def _download(url: str, timeout: int = 180) -> bytes:
     return resp.content
 
 
+# --- Open tender notices (currently-posted RFPs) -------------------------------------
+# Used only to link a posted RFP back to the historical competition for the same commodity
+# (GSIN) and buyer. NOTE: on real data only ~5% of open notices carry a GSIN, so the precise
+# link fires for a minority; the contracting entity is ~always present.
+_OPEN_TENDER_COLS = {
+    "solicitationNumber-numeroSollicitation": "solicitationNumber",
+    "title-titre-eng": "title",
+    "gsin-nibs": "gsin",
+    "unspsc": "unspsc",
+    "contractingEntityName-nomEntitContractante-eng": "buyerName",
+    "tenderClosingDate-appelOffresDateCloture": "tenderClosingDate",
+    "procurementCategory-categorieApprovisionnement": "procurementCategory",
+    "procurementMethod-methodeApprovisionnement-eng": "procurementMethod",
+}
+_OPEN_TENDER_URL = ("https://canadabuys.canada.ca/opendata/pub/"
+                    "openTenderNotice-ouvertAvisAppelOffres.csv")
+
+
+def fetch_open_tenders() -> pd.DataFrame:
+    """Download the CanadaBuys 'Open tender notices' file and map to the RFP raw schema."""
+    keep = set(_OPEN_TENDER_COLS)
+    raw = pd.read_csv(io.BytesIO(_download(_OPEN_TENDER_URL)), dtype=str,
+                      usecols=lambda c: c in keep, encoding="utf-8-sig",
+                      on_bad_lines="skip", low_memory=False)
+    return raw.rename(columns=_OPEN_TENDER_COLS)
+
+
 def fetch_proactive_disclosure(max_rows: int = 5000,
                                resource_id: Optional[str] = None) -> pd.DataFrame:
     """Fetch proactive-disclosure rows and map them to the raw schema the pipeline expects.

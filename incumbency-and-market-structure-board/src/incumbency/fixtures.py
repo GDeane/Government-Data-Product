@@ -112,10 +112,10 @@ def generate_raw_awards() -> pd.DataFrame:
                      220_000, "2025-03-30", unspsc="80101500", num_bids=2))
     # A financial amendment (counts toward value, not award events) + an admin one.
     rows.append(_row("SOL-0012", "ACME INCORPORATED", "Public Services and Procurement Canada",
-                     "D302A", "Open Bidding", "Contract", 50_000, "2025-01-10",
+                     "D302A", "Open Bidding", "Contract", 50_000, "2025-01-10", unspsc="80101500",
                      amendment_number="001", amendment_type="Increase to contract value"))
     rows.append(_row("SOL-0012", "ACME INCORPORATED", "Public Services and Procurement Canada",
-                     "D302A", "Open Bidding", "Contract", 50_000, "2025-04-12",
+                     "D302A", "Open Bidding", "Contract", 50_000, "2025-04-12", unspsc="80101500",
                      amendment_number="002", amendment_type="Administrative correction"))
     # A value conflict: proactive disclosure reports a different number for one solicitation.
     rows.append(_row(sol(), "Acme Inc.", "Public Services and Procurement Canada", "D302A",
@@ -217,3 +217,30 @@ def generate_raw_awards() -> pd.DataFrame:
                          "Open Bidding", "Contract", value, d, unspsc="80111600", num_bids=bids))
 
     return pd.DataFrame(rows)
+
+
+def generate_open_tenders() -> pd.DataFrame:
+    """Synthetic currently-posted RFPs, in the open-tender-notice shape, to demo the
+    'who's my competition' link. Engineered to cover every link outcome:
+
+      * D302A / PSPC  -> matches the enterable market (history exists)
+      * J5005 / SSC   -> matches the thin-field market (history exists)
+      * Z9999 / CRA   -> a GSIN with NO historical awards (no match)
+      * (blank GSIN)  -> cannot be linked precisely (the ~95% real-world case)
+    """
+    cols = ["solicitationNumber", "title", "gsin", "unspsc", "buyerName",
+            "tenderClosingDate", "procurementCategory", "procurementMethod"]
+    data = [
+        # UNSPSC matches the historical market's commodity key -> exact link.
+        ("OPEN-2026-001", "Advisory & implementation services", "D302A", "80101500", "PSPC",
+         "2026-07-15", "SRV", "Open Bidding"),
+        ("OPEN-2026-002", "IT managed services", "J5005", "80111620", "Shared Services Canada",
+         "2026-07-22", "SRV", "Open Bidding"),
+        # A UNSPSC with no historical awards -> no match.
+        ("OPEN-2026-003", "Specialized widget supply", "Z9999", "99999999",
+         "Canada Revenue Agency", "2026-08-01", "GD", "Open Bidding"),
+        # No commodity code at all -> cannot link (the ~95% real-world case for GSIN).
+        ("OPEN-2026-004", "Facilities maintenance (no commodity code on notice)", "", "",
+         "Department of National Defence", "2026-07-30", "SRV", "Open Bidding"),
+    ]
+    return pd.DataFrame(data, columns=cols)

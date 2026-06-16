@@ -37,3 +37,24 @@ def test_instrument_classification():
 def test_normalize_gsin():
     assert normalize.normalize_gsin(" d302a ") == "D302A"
     assert normalize.normalize_gsin(None) == ""
+
+
+def test_normalize_gsin_nullish_values_collapse_to_empty():
+    # The float NaN from an empty CSV cell stringifies to 'nan' — must not become a code.
+    assert normalize.normalize_gsin(float("nan")) == ""
+    assert normalize.normalize_gsin("nan") == ""
+    assert normalize.normalize_gsin("NULL") == ""
+    assert normalize.normalize_gsin("N/A") == ""
+
+
+def test_normalize_unspsc():
+    assert normalize.normalize_unspsc("80101500") == "80101500"
+    assert normalize.normalize_unspsc("80101500.0") == "80101500"   # float-read repr
+    assert normalize.normalize_unspsc(float("nan")) == ""
+    assert normalize.normalize_unspsc("") == ""
+
+
+def test_commodity_key_prefers_unspsc():
+    assert normalize.commodity_key("80101500", "D302A") == ("80101500", "unspsc")
+    assert normalize.commodity_key("", "D302A") == ("D302A", "gsin")   # fallback
+    assert normalize.commodity_key(float("nan"), None) == ("", "")

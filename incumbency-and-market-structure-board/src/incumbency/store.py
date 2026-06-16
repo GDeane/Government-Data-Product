@@ -20,7 +20,7 @@ from .config import DUCKDB_PATH
 # Columns whose values are Python lists/dicts and must be JSON-encoded for storage.
 _JSON_COLS = {
     "confidence_flags", "procedure_mix", "instrument_mix", "confounders",
-    "possible_same_vendor", "solicitation_numbers",
+    "possible_same_vendor", "solicitation_numbers", "vendor_shares",
 }
 
 
@@ -58,6 +58,31 @@ def save(awards: pd.DataFrame, markets: pd.DataFrame,
         con.execute("CREATE TABLE markets AS SELECT * FROM markets_df")
     finally:
         con.close()
+
+
+def save_rfps(rfps: pd.DataFrame, path: Union[str, Path] = DUCKDB_PATH) -> None:
+    """Persist the open-RFP table without disturbing awards/markets (D5.1)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    con = duckdb.connect(str(path))
+    try:
+        con.execute("DROP TABLE IF EXISTS rfps")
+        if rfps is not None and not rfps.empty:
+            con.register("rfps_df", _encode(rfps))
+            con.execute("CREATE TABLE rfps AS SELECT * FROM rfps_df")
+    finally:
+        con.close()
+
+
+def load_rfps(path: Union[str, Path] = DUCKDB_PATH) -> pd.DataFrame:
+    con = duckdb.connect(str(path), read_only=True)
+    try:
+        exists = con.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name='rfps'").fetchone()
+        df = con.execute("SELECT * FROM rfps").df() if exists else pd.DataFrame()
+    finally:
+        con.close()
+    return _decode(df)
 
 
 def load_markets(path: Union[str, Path] = DUCKDB_PATH) -> pd.DataFrame:

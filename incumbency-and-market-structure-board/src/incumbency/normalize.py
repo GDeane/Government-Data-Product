@@ -91,8 +91,41 @@ def classify_instrument(raw) -> str:
     return "contract"
 
 
-def normalize_gsin(raw) -> str:
-    """Normalize a GSIN code: uppercase, strip whitespace. GSIN codes are alphanumeric."""
+_NULLISH = {"", "NAN", "NONE", "NULL", "N/A", "NA"}
+
+
+def normalize_unspsc(raw) -> str:
+    """Normalize an 8-digit UNSPSC code to digits only. Handles the float-repr '80101500.0'
+    and the null-ish disguises (None / NaN / 'NULL'). Returns '' when absent."""
     if raw is None:
         return ""
-    return re.sub(r"\s+", "", str(raw).strip().upper())
+    s = str(raw).strip()
+    if s.upper() in _NULLISH:
+        return ""
+    s = re.sub(r"\.0+$", "", s)        # drop a trailing .0 from a float read
+    return re.sub(r"\D", "", s)
+
+
+def commodity_key(unspsc, gsin) -> tuple:
+    """The market commodity key: full UNSPSC where present, else GSIN (so sources without
+    UNSPSC, e.g. the Proactive-Disclosure spine, still form markets). Returns (code, type)
+    where type is 'unspsc' | 'gsin' | '' (absent)."""
+    u = normalize_unspsc(unspsc)
+    if u:
+        return u, "unspsc"
+    g = normalize_gsin(gsin)
+    if g:
+        return g, "gsin"
+    return "", ""
+
+
+def normalize_gsin(raw) -> str:
+    """Normalize a GSIN code: uppercase, strip whitespace. GSIN codes are alphanumeric.
+
+    Missing values arrive in several disguises — None, the float NaN (which stringifies to
+    'nan'), or literal 'NULL'/'N/A' — and must all collapse to '' so they are never mistaken
+    for a real commodity code (which would otherwise fabricate a phantom 'NAN' market)."""
+    if raw is None:
+        return ""
+    s = re.sub(r"\s+", "", str(raw).strip().upper())
+    return "" if s in _NULLISH else s

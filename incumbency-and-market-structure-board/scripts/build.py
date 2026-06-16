@@ -30,6 +30,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from incumbency import config, pipeline, store  # noqa: E402
 
 
+def _build_rfps(source: str):
+    """Build the open-RFP table: synthetic fixtures offline, live open tenders otherwise.
+    Best-effort on the live path — a network failure leaves the board fully usable."""
+    from incumbency import pipeline
+    if source == "synthetic":
+        from incumbency import fixtures
+        return pipeline.build_rfps(fixtures.generate_open_tenders())
+    try:
+        from incumbency import ingest
+        print("Fetching currently-posted open tender notices…")
+        return pipeline.build_rfps(ingest.fetch_open_tenders())
+    except Exception as e:  # network/host hiccup must not break the build
+        print(f"  (skipped open RFPs: {e})")
+        from incumbency import pipeline as _p
+        import pandas as pd
+        return _p.build_rfps(pd.DataFrame())
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Build the Incumbency & Market-Structure Board")
     ap.add_argument("--source", choices=["synthetic", "live", "contract_history"],
@@ -61,8 +79,13 @@ def main() -> int:
     result = pipeline.run_pipeline(raw)
     store.save(result.awards, result.markets, args.db)
 
+    # Open RFPs (for the 'who's my competition' link). Synthetic offline; live otherwise.
+    rfps = _build_rfps(args.source)
+    store.save_rfps(rfps, args.db)
+
     m = result.markets
-    print(f"\nWrote {len(result.awards)} awards and {len(m)} markets to {args.db}")
+    print(f"\nWrote {len(result.awards)} awards, {len(m)} markets, {len(rfps)} open RFPs "
+          f"to {args.db}")
     if not m.empty:
         counts = m["verdict"].value_counts().to_dict()
         print("Verdicts:", ", ".join(f"{k}={v}" for k, v in counts.items()))

@@ -28,6 +28,8 @@ AWARD_COLUMNS = [
     "buyer_canonical",
     "gsin",
     "unspsc",
+    "commodity",             # market key: UNSPSC where present, else GSIN (D10)
+    "commodity_type",        # 'unspsc' | 'gsin' | ''
     "procedure_class",       # enum PROCEDURE_CLASSES
     "instrument_class",      # enum INSTRUMENT_CLASSES
     "award_value_cad",       # currency-normalized (D2.2)
@@ -46,11 +48,21 @@ AWARD_COLUMNS = [
 
 # --- Market-level (commodity × buyer) derived columns ---------------------------------
 MARKET_COLUMNS = [
-    "gsin",
+    "commodity",             # the grouping key (UNSPSC, or GSIN fallback)
+    "commodity_type",        # 'unspsc' | 'gsin'
+    "gsin",                  # representative GSIN in the market (for reference)
+    "unspsc",                # representative UNSPSC in the market
     "buyer_canonical",
     "n_awards",
     "top1_vendor",
     "top1_share",            # headline concentration (D4.1)
+    # --- Top-k competitors + market share (the 'who's my competition' focus) ----------
+    "top2_vendor",
+    "top2_share",
+    "top3_vendor",
+    "top3_share",
+    "total_value_cad",       # total market size (CAD)
+    "vendor_shares",         # list[{vendor, value, value_share, awards, count_share}] for pie
     "hhi",                   # secondary concentration view
     "distinct_winners",      # turnover (D4.2)
     "lead_changes",
