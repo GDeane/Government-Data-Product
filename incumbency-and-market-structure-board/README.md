@@ -70,7 +70,24 @@ The verdict is built from **disclosed fields only**, each re-derivable from sour
 
 You don't need to be a programmer to run this. Do the steps **in order**, copying each grey
 block into a terminal (**Terminal** on Mac/Linux, or **PowerShell** on Windows). Steps 1 and 2
-are one-time setup; after that you just run steps 3 and 4.
+are one-time setup; after that you only need step 3.
+
+**A prebuilt database ships with the project**, so you can open the app right away — there's
+**no download or build step required** to get started. (If you want fresher data later, see
+"Refreshing the data" below.)
+
+### Step 0 — Get the project onto your computer (one time)
+
+If you haven't already, download the project. Either click the green **Code → Download ZIP**
+button on the GitHub page and unzip it, or, if you have `git` installed:
+
+```bash
+git clone https://github.com/GDeane/Government-Data-Product.git
+```
+
+Everything below is run **from inside the project folder**
+(`incumbency-and-market-structure-board`). On Mac/Linux you'd `cd` into it; on Windows, open the
+folder and use the address bar to launch a terminal there.
 
 ### Step 1 — Install Python (one time)
 
@@ -89,29 +106,35 @@ pip install -r requirements.txt      # installs everything it needs
 
 After the second line, your prompt should start with `(.venv)` — that means the workspace is
 active. If you close the terminal and come back later, just run the `activate` line again before
-steps 3–4.
+step 3.
 
-### Step 3 — Download the data and build the board
-
-```bash
-python scripts/build.py --source contract_history --years 2024-2025 2023-2024 2022-2023
-```
-
-This downloads three years of **real Government of Canada** contract data (plus the list of
-currently-open federal tenders) and saves it into a single file, `data/market_board.duckdb`. It
-fetches a few hundred megabytes, so it can take a few minutes — that's normal. When it finishes
-you'll see a one-line summary of how many awards, markets, and open tenders were loaded.
-
-Re-run this same command any time you want fresher data.
-
-### Step 4 — Open the app
+### Step 3 — Open the app
 
 ```bash
 streamlit run app/board.py
 ```
 
-This opens **"Who's My Competition?"** in your web browser. Keep the terminal window open while
-you use the app; when you're done, click back into the terminal and press `Ctrl + C` to stop it.
+This opens **"Who's My Competition?"** in your web browser, using the prebuilt database that came
+with the project. If it doesn't open automatically, copy the **Local URL** the command prints
+(usually `http://localhost:8501`) into your browser.
+
+Keep the terminal window open while you use the app; when you're done, click back into the
+terminal and press `Ctrl + C` to stop it.
+
+### Refreshing the data (optional)
+
+The bundled database is a snapshot. To pull the latest **real Government of Canada** contract data
+and rebuild it yourself, run:
+
+```bash
+python scripts/build.py --source contract_history --years 2024-2025 2023-2024 2022-2023
+```
+
+This downloads three years of contract data (plus the list of currently-open federal tenders) and
+overwrites `data/market_board.duckdb`. It fetches a few hundred megabytes, so it can take a few
+minutes — that's normal. When it finishes you'll see a one-line summary of how many awards,
+markets, and open tenders were loaded. Re-run it any time you want fresher data, then restart the
+app (step 3).
 
 ## Using the app
 
