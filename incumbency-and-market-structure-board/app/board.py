@@ -227,6 +227,12 @@ def _rfps_tab(markets: pd.DataFrame, rfps: pd.DataFrame, basis_label: str, topn:
 
     st.caption(f"{len(view)} of {len(rfps)} open RFPs shown "
                f"({n_linkable} link to historical competition).")
+    st.caption("Scope: currently-open **federal** Government of Canada tender notices (~900) "
+               "from the CanadaBuys open-data bulk files. The canadabuys.canada.ca search shows "
+               "many more 'Open' results because it also indexes provincial, territorial, and "
+               "MASH-sector (municipal / academic / school / hospital) opportunities, which "
+               "aren't in the federal bulk export — and have no federal historical market to "
+               "link against anyway.")
     cols = ["solicitation_number", "title", "unspsc", "gsin", "buyer_canonical",
             "closing_date"] + (["_precision"] if has_prec else [])
     rfp_table = view[cols].rename(columns={

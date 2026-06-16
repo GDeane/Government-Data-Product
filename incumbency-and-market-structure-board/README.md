@@ -66,42 +66,77 @@ The verdict is built from **disclosed fields only**, each re-derivable from sour
 
 ---
 
-## Quick start
+## Getting started
+
+You don't need to be a programmer to run this. Do the steps **in order**, copying each grey
+block into a terminal (**Terminal** on Mac/Linux, or **PowerShell** on Windows). Steps 1 and 2
+are one-time setup; after that you just run steps 3 and 4.
+
+### Step 1 — Install Python (one time)
+
+Install **Python 3.10** from [python.org](https://www.python.org/downloads/) if you don't already
+have it. On the Windows installer, tick **"Add Python to PATH"**.
+
+### Step 2 — Set up the project (one time)
+
+From inside the project folder, run:
 
 ```bash
-# 0) Create and activate a virtual environment, then install (using uv)
-uv venv --python 3.10        # built & tested on Python 3.10
-source .venv/bin/activate    # Windows: .venv\Scripts\activate
-uv pip install -e .          # installs the package + deps; no PYTHONPATH needed
-
-# (or with plain pip)
-# python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
-
-# 1) Build the board into DuckDB (synthetic fixtures — offline, deterministic, ~instant)
-python scripts/build.py
-
-# 2) Or build from REAL Government of Canada data via the CKAN API (read-only, no key)
-python scripts/build.py --source live --limit 8000             # PD spine — has bid counts
-python scripts/build.py --source contract_history --years 2024-2025  # amendment-aware spine
-
-# 3) Explore the "Who's My Competition?" board (pie charts + top-k + open-RFP link)
-streamlit run app/board.py
-
-# 4) Run the tests
-python -m pytest -q
+python -m venv .venv                 # creates a private workspace for this tool
+source .venv/bin/activate            # Windows instead: .venv\Scripts\activate
+pip install -r requirements.txt      # installs everything it needs
 ```
 
-`scripts/build.py` writes `data/market_board.duckdb` with three tables — `awards` (canonical
-per-award, the source of truth), `markets` (per GSIN × buyer: top-k competitors, the full
-vendor share table, plus the retained structural metrics), and `rfps` (currently-posted open
-tenders, for the competition link). The Streamlit app reads that file.
+After the second line, your prompt should start with `(.venv)` — that means the workspace is
+active. If you close the terminal and come back later, just run the `activate` line again before
+steps 3–4.
+
+### Step 3 — Download the data and build the board
+
+```bash
+python scripts/build.py --source contract_history --years 2024-2025 2023-2024 2022-2023
+```
+
+This downloads three years of **real Government of Canada** contract data (plus the list of
+currently-open federal tenders) and saves it into a single file, `data/market_board.duckdb`. It
+fetches a few hundred megabytes, so it can take a few minutes — that's normal. When it finishes
+you'll see a one-line summary of how many awards, markets, and open tenders were loaded.
+
+Re-run this same command any time you want fresher data.
+
+### Step 4 — Open the app
+
+```bash
+streamlit run app/board.py
+```
+
+This opens **"Who's My Competition?"** in your web browser. Keep the terminal window open while
+you use the app; when you're done, click back into the terminal and press `Ctrl + C` to stop it.
+
+## Using the app
+
+- **Open RFPs → competition** (the tab you land on): pick a currently-open federal tender, and the
+  page shows **who has historically won the same kind of work at the same department** — your
+  likely competition — as a pie chart with the top 1–3 competitors named. You can switch the share
+  between **dollar value** and **number of awards**.
+- **Browse historical markets**: explore the markets directly, without starting from an open
+  tender.
+
+Some open tenders can't be linked to history — either the tender doesn't list a commodity code, or
+no one has bought that commodity at that department before. The app tells you when that's the case,
+and by default shows you the ones that *can* be linked first.
+
+> **A note on the numbers.** This tool covers **federal** Government of Canada tenders (~900 open at
+> any time). The CanadaBuys website shows many more "Open" results because it also lists provincial,
+> territorial, and municipal/school/hospital opportunities — those aren't part of the federal data
+> this tool is built on.
 
 ---
 
 ## How it works
 
 ```
-CKAN pull / synthetic fixtures
+CanadaBuys contract history (CKAN pull)
         │
         ▼
   clean (values, dates, currency, amendments)      ── deterministic
@@ -160,8 +195,8 @@ src/incumbency/
   store.py       DuckDB persistence + provenance lookup
   fixtures.py    deterministic synthetic dataset (one market per verdict)
 app/board.py     Streamlit ranked board with drill-down
-scripts/build.py CLI: build synthetic or live into DuckDB
-tests/           39 tests incl. golden verdict cases + ER precision/recall gate
+scripts/build.py CLI: build the board from CanadaBuys contract history into DuckDB
+tests/           53 tests incl. golden verdict cases + ER precision/recall gate
 MILESTONES.md    milestone-by-milestone design-decision log
 ```
 

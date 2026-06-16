@@ -14,6 +14,7 @@ network-gated smoke test, not the core test suite."""
 from __future__ import annotations
 
 import io
+import re
 import time
 from typing import Optional
 
@@ -40,6 +41,19 @@ _PD_FIELD_MAP = {
     "contract_date": "contractAwardDate",
     "number_of_bids": "numberOfBids",
 }
+
+
+def _route_commodity_code(raw_code) -> tuple:
+    """Split PD's overloaded `commodity_code` into (unspsc, gsin). An 8-digit numeric value is
+    a UNSPSC code; anything else (e.g. 'N5830', 'U099AA') is a GSIN. Returns (None, None) for a
+    blank/null code. A trailing '.0' from a float read is tolerated before the digit test."""
+    if raw_code is None:
+        return None, None
+    s = str(raw_code).strip()
+    if not s or s.lower() == "nan":
+        return None, None
+    s = re.sub(r"\.0+$", "", s)
+    return (s, None) if re.fullmatch(r"\d{8}", s) else (None, s)
 
 
 def ckan_get(action: str, timeout: int = 60, **params) -> dict:
@@ -233,18 +247,56 @@ _OPEN_TENDER_COLS = {
     "tenderClosingDate-appelOffresDateCloture": "tenderClosingDate",
     "procurementCategory-categorieApprovisionnement": "procurementCategory",
     "procurementMethod-methodeApprovisionnement-eng": "procurementMethod",
+    # Kept only for cross-file dedup (dropped before return), not part of the RFP schema.
+    "referenceNumber-numeroReference": "referenceNumber",
+    "amendmentNumber-numeroModification": "amendmentNumber",
 }
-_OPEN_TENDER_URL = ("https://canadabuys.canada.ca/opendata/pub/"
-                    "openTenderNotice-ouvertAvisAppelOffres.csv")
+# CanadaBuys splits currently-open tender data across TWO bulk files, and they do NOT fully
+# overlap: a freshly-published (or freshly-amended) notice lands in `newTenderNotice` first and
+# only propagates into `openTenderNotice` after a ~1-day ETL lag (verified: of 8 rows in the new
+# file, 5 were absent from the 913-row open file). Reading only the "open" file therefore drops
+# the day's newest open RFPs. We fetch both and union them, deduping on referenceNumber and
+# keeping the highest amendmentNumber (the latest revision of each notice).
+_OPEN_TENDER_URLS = (
+    "https://canadabuys.canada.ca/opendata/pub/openTenderNotice-ouvertAvisAppelOffres.csv",
+    "https://canadabuys.canada.ca/opendata/pub/newTenderNotice-nouvelAvisAppelOffres.csv",
+)
+# Back-compat alias for the primary file (some callers/tests reference it directly).
+_OPEN_TENDER_URL = _OPEN_TENDER_URLS[0]
 
 
 def fetch_open_tenders() -> pd.DataFrame:
-    """Download the CanadaBuys 'Open tender notices' file and map to the RFP raw schema."""
+    """Download the CanadaBuys open-tender bulk files and map to the RFP raw schema.
+
+    Unions the `openTenderNotice` and `newTenderNotice` files (the latter carries the day's
+    newest notices before they reach the former), deduping on referenceNumber and keeping each
+    notice's latest amendment. A single file failing is tolerated as long as one succeeds."""
     keep = set(_OPEN_TENDER_COLS)
-    raw = pd.read_csv(io.BytesIO(_download(_OPEN_TENDER_URL)), dtype=str,
-                      usecols=lambda c: c in keep, encoding="utf-8-sig",
-                      on_bad_lines="skip", low_memory=False)
-    return raw.rename(columns=_OPEN_TENDER_COLS)
+    frames = []
+    errors = []
+    for url in _OPEN_TENDER_URLS:
+        try:
+            frames.append(pd.read_csv(io.BytesIO(_download(url)), dtype=str,
+                                      usecols=lambda c: c in keep, encoding="utf-8-sig",
+                                      on_bad_lines="skip", low_memory=False))
+        except Exception as e:  # one file down must not lose the other
+            errors.append(f"{url}: {e}")
+    if not frames:
+        raise RuntimeError("could not fetch any open-tender file: " + "; ".join(errors))
+
+    raw = pd.concat(frames, ignore_index=True).rename(columns=_OPEN_TENDER_COLS)
+
+    # Dedup: keep the latest amendment per notice. amendmentNumber is a zero-padded string
+    # like "000"/"001"; sort numerically (non-numeric -> -1) so the highest revision wins.
+    if "referenceNumber" in raw.columns:
+        amd = pd.to_numeric(raw.get("amendmentNumber"), errors="coerce").fillna(-1)
+        raw = (raw.assign(_amd=amd)
+                  .sort_values("_amd")
+                  .drop_duplicates(subset="referenceNumber", keep="last")
+                  .drop(columns="_amd"))
+
+    return raw.drop(columns=[c for c in ("referenceNumber", "amendmentNumber")
+                             if c in raw.columns]).reset_index(drop=True)
 
 
 def fetch_proactive_disclosure(max_rows: int = 5000,
@@ -264,6 +316,16 @@ def fetch_proactive_disclosure(max_rows: int = 5000,
     out = pd.DataFrame()
     for src, dst in _PD_FIELD_MAP.items():
         out[dst] = raw[src] if src in raw.columns else None
+
+    # PD packs BOTH coding systems into its single `commodity_code` field (~96% GSIN-style,
+    # ~4% 8-digit UNSPSC). The field map lands it all in `gsin`; split it so UNSPSC codes go to
+    # `unspsc`. Without this the RFP linkage — which matches mostly on UNSPSC (~84% of open
+    # notices) — can never link to the PD spine, since every PD market would carry only a GSIN
+    # (verified: 0 linkable before, the UNSPSC overlap is misrouted into the gsin column).
+    code = out["gsin"].map(_route_commodity_code)
+    out["unspsc"] = [u for u, _ in code]
+    out["gsin"] = [g for _, g in code]
+
     out["currency"] = "CAD"            # PD is reported in CAD
     out["amendmentNumber"] = "000"     # PD has no clean amendment-number field
     out["amendmentType"] = ""
