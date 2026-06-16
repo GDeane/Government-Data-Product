@@ -1,0 +1,10 @@
+# Runtime dependencies for the "Who's My Competition?" Streamlit app
+# (incumbency-and-market-structure-board/app/board.py).
+# Placed at the repository root so Streamlit Community Cloud installs them, since the app
+# lives in a subdirectory.
+pandas>=2.0
+duckdb>=1.0
+rapidfuzz>=3.0
+requests>=2.28
+streamlit>=1.30
+altair>=5.0

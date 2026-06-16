@@ -286,9 +286,10 @@ def main() -> None:
     db_path = st.sidebar.text_input("DuckDB path", value=str(DUCKDB_PATH))
     st.session_state["_db"] = db_path
     if not Path(db_path).exists():
-        st.warning(f"No database at `{db_path}`. Build one first:\n\n"
-                   "`python scripts/build.py`  (synthetic, offline)\n\n"
-                   "`python scripts/build.py --source contract_history --years 2024-2025`")
+        st.warning(
+            f"No database at `{db_path}`. Build one first:\n\n"
+            "`python scripts/build.py --source contract_history "
+            "--years 2024-2025 2023-2024 2022-2023`")
         st.stop()
 
     markets, rfps = _load(db_path, Path(db_path).stat().st_mtime)

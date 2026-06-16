@@ -3,4 +3,5 @@ duckdb>=1.0
 rapidfuzz>=3.0
 requests>=2.28
 streamlit>=1.30
+altair>=5.0
 pytest>=7.0
